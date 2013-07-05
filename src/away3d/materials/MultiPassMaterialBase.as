@@ -14,6 +14,7 @@
 	import away3d.materials.passes.CompiledPass;
 	import away3d.materials.passes.LightingPass;
 	import away3d.materials.passes.ShadowCasterPass;
+	import away3d.materials.passes.SilhouettePass;
 	import away3d.materials.passes.SuperShaderPass;
 	import away3d.textures.Texture2DBase;
 	
@@ -35,6 +36,7 @@
 		protected var _casterLightPass:ShadowCasterPass;
 		protected var _nonCasterLightPasses:Vector.<LightingPass>;
 		protected var _effectsPass:SuperShaderPass;
+		protected var _silhouettePass:SilhouettePass;
 		
 		private var _alphaThreshold:Number = 0;
 		private var _specularLightSources:uint = 0x01;
@@ -45,9 +47,11 @@
 		private var _diffuseMethod:BasicDiffuseMethod = new BasicDiffuseMethod();
 		private var _normalMethod:BasicNormalMethod = new BasicNormalMethod();
 		private var _specularMethod:BasicSpecularMethod = new BasicSpecularMethod();
+		private var _silhouetteMethod:BasicDiffuseMethod = new BasicDiffuseMethod();
 		
 		private var _screenPassesInvalid:Boolean = true;
 		private var _enableLightFallOff:Boolean = true;
+		private var _renderSilhouette:Boolean = false;
 		
 		/**
 		 * Creates a new MultiPassMaterialBase object.
@@ -55,6 +59,9 @@
 		public function MultiPassMaterialBase()
 		{
 			super();
+			
+			_silhouetteMethod.diffuseColor = 0x0099FF;
+			_silhouetteMethod.diffuseAlpha = 0.5;
 		}
 		
 		/**
@@ -207,7 +214,7 @@
 		}
 		
 		/**
-		 * The method that provides the diffuse lighting contribution. Defaults to BasicDiffuseMethod.
+		 * The method that provides the silhouette render method. Defaults to BasicDiffuseMethod.
 		 */
 		public function get diffuseMethod():BasicDiffuseMethod
 		{
@@ -218,6 +225,21 @@
 		{
 			value.copyFrom(_diffuseMethod);
 			_diffuseMethod = value;
+			invalidateScreenPasses();
+		}
+		
+		/**
+		 * The method that provides the diffuse lighting contribution. Defaults to BasicDiffuseMethod.
+		 */
+		public function get silhouetteMethod():BasicDiffuseMethod
+		{
+			return _silhouetteMethod;
+		}
+		
+		public function set silhouetteMethod(value:BasicDiffuseMethod):void
+		{
+			value.copyFrom(_silhouetteMethod);
+			_silhouetteMethod = value;
 			invalidateScreenPasses();
 		}
 
@@ -390,6 +412,19 @@
 		}
 		
 		/**
+		 * The colour of the ambient reflection.
+		 */
+		public function get silhouetteColor():uint
+		{
+			return _silhouetteMethod.diffuseColor;
+		}
+		
+		public function set silhouetteColor(value:uint):void
+		{
+			_silhouetteMethod.diffuseColor = value;
+		}
+		
+		/**
 		 * The overall strength of the specular reflection.
 		 */
 		public function get specular():Number
@@ -443,6 +478,8 @@
 			
 			if (passesInvalid || isAnyScreenPassInvalid()) {
 				clearPasses();
+				
+				addScreenPass(_silhouettePass);
 				
 				addChildPassesFor(_casterLightPass);
 				if (_nonCasterLightPasses) {
@@ -544,6 +581,12 @@
 		 */
 		private function initPasses():void
 		{
+			// only use silhouette pass if the boolean has been set
+			if (_renderSilhouette)
+				initSilhouettePass();
+			else
+				removeSilhouettePass();
+			
 			// let the effects pass handle everything if there are no lights,
 			// or when there are effect methods applied after shading.
 			if (numLights == 0 || numMethods > 0)
@@ -725,6 +768,24 @@
 			
 			return _effectsPass;
 		}
+		
+		private function initSilhouettePass():void 
+		{
+			_silhouettePass ||= new SilhouettePass(this);
+			_silhouettePass.diffuseMethod = null;
+			_silhouettePass.diffuseMethod = _silhouetteMethod;
+		}
+		
+		private function removeSilhouettePass():void 
+		{
+			if (!_silhouettePass)
+				return;
+			
+			_silhouettePass.diffuseMethod.dispose();
+			removePass(_silhouettePass);
+			_silhouettePass.dispose();
+			_silhouettePass = null;
+		}
 
 		/**
 		 * The maximum total number of lights provided by the light picker.
@@ -756,6 +817,27 @@
 		 */
 		private function onLightsChange(event:Event):void
 		{
+			invalidateScreenPasses();
+		}
+		
+		/**
+		 * Render a silhouette if an object using this material is occluded by other objects.
+		 */
+		public function get renderSilhouette():Boolean 
+		{
+			return _renderSilhouette;
+		}
+		
+		public function set renderSilhouette(value:Boolean):void 
+		{
+			if (_renderSilhouette == value) return;
+			
+			_renderSilhouette = value;
+			if (_renderSilhouette)
+			{
+				_renderOrderId = 1;
+			}
+			
 			invalidateScreenPasses();
 		}
 	}
